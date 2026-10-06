@@ -1,0 +1,21 @@
+# OpenCharm (github.com/Kaseban/opencharm): Waveshare ESP32-S3-Zero (ESP32-S3FH4R2: 4 MB flash, 2 MB quad PSRAM,
+# native USB) driving an Osptek AM196Q410502LK 1.96" CO5300 AMOLED (410x502, QSPI), a CST820 touch controller and a
+# Hi-Link ZW0608 fingerprint module on UART1. Pins from hardware/pinmap.md in that repo (the same wiring its own
+# firmware uses). Loads after sdkconfig.defaults. Status-screen kind: bars, animation, images, plus charm.* commands.
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_HOMEHUB_LED_BACKEND_OPENCHARM_CO5300=y
+CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT=y
+CONFIG_HOMEHUB_BUTTON_GPIO=0
+CONFIG_HOMEHUB_BLE_NAME_SUFFIX="-Charm"
+# 4 MB: one app slot, no OTA (same table as the 4 MB C6 board)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_waveshare_c6_lcd_147.csv"
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+# 2 MB of PSRAM: leave the home-network tunnel off
+CONFIG_HOMEHUB_TUNNEL=n

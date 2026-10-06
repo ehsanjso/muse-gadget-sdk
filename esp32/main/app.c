@@ -55,6 +55,9 @@
 #include "image_fetch.h"
 #include "noise_tunnel.h"
 #include "led_status.h"
+#if CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT
+#include "opencharm_fp.h"
+#endif
 #include "button.h"
 #include "tunnel_netif.h"
 #include "net_discovery.h"
@@ -1532,6 +1535,32 @@ typedef struct {
     char request_id[64];
 } draw_url_ctx_t;
 
+#if CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT
+typedef struct {
+    noise_ctrl_session_generation_t session_generation;
+    char request_id[64];
+    char title[64];
+    int timeout_ms;
+} charm_ask_args_t;
+
+// Shows the question, waits for a fingerprint, reports allow only on an enrolled match. Deny on everything else.
+static void charm_ask_task(void *arg) {
+    charm_ask_args_t *args = arg;
+    led_status_set_title(args->title);
+    opencharm_fp_result_t r = opencharm_fp_identify(args->timeout_ms);
+    led_status_set_title(r.allow ? "allowed" : "denied");
+    cJSON *result = cJSON_CreateObject();
+    cJSON_AddBoolToObject(result, "ok", true);
+    cJSON *payload = cJSON_AddObjectToObject(result, "payload");
+    cJSON_AddStringToObject(payload, "decision", r.allow ? "allow" : "deny");
+    cJSON_AddStringToObject(payload, "reason", r.reason);
+    if (r.allow) cJSON_AddNumberToObject(payload, "finger_id", r.slot);
+    noise_ctrl_send_command_result(args->session_generation, args->request_id, result);
+    free(args);
+    vTaskDelete(NULL);
+}
+#endif
+
 static void draw_url_done(const image_fetch_result_t *r, void *user) {
     draw_url_ctx_t *ctx = user;
     cJSON *result = cJSON_CreateObject();
@@ -1872,6 +1901,35 @@ static cJSON *on_ws_command(
         cJSON *result = cJSON_CreateObject();
         cJSON_AddBoolToObject(result, "ok", true);
         return result;
+    }
+#endif
+#if CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT
+    if (strcmp(command, "charm.notify") == 0) {
+        cJSON *title = cJSON_GetObjectItem(params, "title");
+        if (!cJSON_IsString(title) || !title->valuestring[0]) return command_error("missing_param", "title is required");
+        led_status_set_title(title->valuestring);
+        led_status_show_animation();
+        cJSON *result = cJSON_CreateObject();
+        cJSON_AddBoolToObject(result, "ok", true);
+        return result;
+    }
+    if (strcmp(command, "charm.ask") == 0) {
+        cJSON *title = cJSON_GetObjectItem(params, "title");
+        if (!cJSON_IsString(title) || !title->valuestring[0]) return command_error("missing_param", "title is required");
+        charm_ask_args_t *args = calloc(1, sizeof(*args));
+        if (!args) return command_error("out_of_memory", "failed to allocate");
+        args->session_generation = session_generation;
+        strncpy(args->request_id, request_id, sizeof(args->request_id) - 1);
+        strncpy(args->title, title->valuestring, sizeof(args->title) - 1);
+        cJSON *t = cJSON_GetObjectItem(params, "timeout_ms");
+        args->timeout_ms = cJSON_IsNumber(t) && t->valueint > 0 && t->valueint <= 120000 ? t->valueint : 30000;
+        if (xTaskCreate(charm_ask_task, "charm_ask", 4096, args, 4, NULL) != pdPASS) {
+            free(args);
+            return command_error("out_of_memory", "failed to start the fingerprint wait");
+        }
+        cJSON *async = cJSON_CreateObject();
+        cJSON_AddBoolToObject(async, "_async", true);
+        return async;
     }
 #endif
 #if CONFIG_MUSE_WATCHER_CAMERA
@@ -2508,6 +2566,9 @@ void app_run(void) {
                       app_desc ? app_desc->version : "unknown", identity_sdk_token());
     vm_api_set_sdk_token(identity_sdk_token());
 
+#if CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT
+    opencharm_fp_init();
+#endif
     if (!led_status_init()) {
         ESP_LOGW(TAG, "LED init failed — continuing without status LED");
     }

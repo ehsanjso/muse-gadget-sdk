@@ -34,13 +34,14 @@
 #   espressif-s3-devkitc-1
 #              ESP32-S3-DevKitC-1 v1.1 N8R8 (status LED, no display)
 #   waveshare-c6-lcd-147
+#   opencharm
 #              Waveshare ESP32-C6-LCD-1.47 with a 172x320 status screen
 #
 # The action defaults to build. Without PORT, flash and monitor use the only
 # matching serial port, if there is exactly one.
 set -euo pipefail
 
-usage() { sed -n '16,38p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+usage() { sed -n '16,39p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 
 [ $# -ge 1 ] || usage 2
 case "$1" in -h|--help) usage ;; esac
@@ -78,6 +79,12 @@ case "$BOARD" in
     DEFAULTS="$DEFAULTS;devices/sdkconfig.$BOARD"
     # The S3's own USB-Serial-JTAG, which looks like a DevKitC-1's; check
     # which board is on the port before flashing.
+    PORTS="/dev/cu.usbmodem* /dev/ttyACM*"
+    ;;
+  opencharm)
+    TARGET=esp32s3
+    DEFAULTS="$DEFAULTS;devices/sdkconfig.$BOARD"
+    # The S3-Zero's own USB-Serial-JTAG.
     PORTS="/dev/cu.usbmodem* /dev/ttyACM*"
     ;;
   waveshare-c6-lcd-147)

@@ -89,6 +89,10 @@ if(CONFIG_HOMEHUB_SENSECAP_SENSORS)
     list(APPEND GADGET_SRCS "sensecap_sensors.c")
 endif()
 
+if(CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT)
+    list(APPEND GADGET_SRCS "opencharm_fp.c")
+endif()
+
 if(CONFIG_HOMEHUB_VOICE)
     list(APPEND GADGET_SRCS
         "voice.c"

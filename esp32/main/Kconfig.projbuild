@@ -193,6 +193,10 @@ menu "ESP32 Device SDK"
             bool "SenseCAP Indicator 4 inch ST7701S RGB display (status bars)"
             depends on IDF_TARGET_ESP32S3 && SPIRAM
 
+        config HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
+            bool "OpenCharm 1.96 inch CO5300 QSPI AMOLED (status bars)"
+            depends on IDF_TARGET_ESP32S3
+
         config HOMEHUB_LED_BACKEND_RETERMINAL_UC8179
             bool "reTerminal E1001 7.5 inch UC8179 e-paper (status screen)"
             depends on IDF_TARGET_ESP32S3 && SPIRAM
@@ -242,6 +246,7 @@ menu "ESP32 Device SDK"
         default y if HOMEHUB_LED_BACKEND_IDEASPARK_ST7789
         default y if HOMEHUB_LED_BACKEND_WAVESHARE_C6_ST7789
         default y if HOMEHUB_LED_BACKEND_SENSECAP_ST7701
+        default y if HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
         default y if HOMEHUB_LED_BACKEND_RETERMINAL_UC8179
         default y if HOMEHUB_LED_BACKEND_RETERMINAL_SPECTRA6
         help
@@ -274,6 +279,16 @@ menu "ESP32 Device SDK"
             humidity. The D1S and D1Pro have CO2 and tVOC built in;
             temperature and humidity need the Grove AHT20. Needs Seeed's stock
             RP2040 firmware.
+
+    config HOMEHUB_OPENCHARM_FINGERPRINT
+        bool "OpenCharm fingerprint commands (charm.ask, charm.notify)"
+        default y if HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
+        depends on HOMEHUB_DISPLAY
+        help
+            Hi-Link ZW0608 fingerprint module on UART1 (TX GPIO17, RX GPIO18,
+            TOUCH_OUT GPIO2). charm.ask shows a question on the screen and
+            answers allow only when an enrolled finger touches the sensor;
+            charm.notify shows a line of text.
 
     config HOMEHUB_DISPLAY_COMMANDS
         bool

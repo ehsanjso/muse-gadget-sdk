@@ -16,5 +16,10 @@ dependencies:
   espressif/esp_websocket_client: "~1.2"
   espressif/cjson: "~1.7"
   espressif/led_strip: "~3.0"
+  # OpenCharm's CO5300 AMOLED (devices/sdkconfig.opencharm)
+  espressif/esp_lcd_co5300:
+    version: "^2.1.0"
+    rules:
+      - if: "$CONFIG{HOMEHUB_LED_BACKEND_OPENCHARM_CO5300} == True"
   idf:
     version: ">=5.1"

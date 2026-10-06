@@ -1378,6 +1378,28 @@ static char *build_register_json(void) {
                 nullptr, nullptr);
 #endif
 
+#if CONFIG_HOMEHUB_OPENCHARM_FINGERPRINT
+    {
+        cJSON *ask_required = cJSON_CreateObject();
+        cJSON_AddItemToObject(ask_required, "title",
+                              string_param("The yes/no question, up to ~40 characters, shown on the OpenCharm screen."));
+        cJSON *ask_optional = cJSON_CreateObject();
+        cJSON *timeout_param = cJSON_CreateObject();
+        cJSON_AddStringToObject(timeout_param, "type", "integer");
+        cJSON_AddStringToObject(timeout_param, "description", "How long to wait for a finger, in ms (default 30000, max 120000).");
+        cJSON_AddItemToObject(ask_optional, "timeout_ms", timeout_param);
+        add_command(commands, "charm.ask",
+                    "Ask the user to confirm with their fingerprint on the OpenCharm device. Returns decision allow "
+                    "only when an enrolled finger touches the sensor; no finger, an unknown finger or a timeout is deny. "
+                    "Use before anything irreversible.",
+                    ask_required, ask_optional);
+        cJSON_AddNumberToObject(cJSON_GetObjectItem(commands, "charm.ask"), "timeout_ms", 125000);
+        cJSON *notify_required = cJSON_CreateObject();
+        cJSON_AddItemToObject(notify_required, "title", string_param("One short line to show on the OpenCharm screen."));
+        add_command(commands, "charm.notify", "Show a short message on the OpenCharm screen (it animates). Use when a long task finishes.",
+                    notify_required, nullptr);
+    }
+#endif
 #if CONFIG_MUSE_WATCHER_CAMERA
     add_command(commands, "camera.capture",
                 "Capture one still JPEG frame from the SenseCAP Watcher camera. "

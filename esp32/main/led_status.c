@@ -46,6 +46,10 @@
 #include "driver/spi_master.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_st7789.h"
+#elif CONFIG_HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
+#include "driver/spi_master.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_co5300.h"
 #else
 #include "driver/i2c_master.h"
 #include "esp_lcd_panel_rgb.h"
@@ -163,6 +167,28 @@ static const char *TAG = "link.led";
 #define LCD_DOT_MARGIN   10
 // Draw buffers are copied into the frame buffer by the CPU.
 #define LCD_BUF_CAPS     (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#elif CONFIG_HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
+// OpenCharm: Osptek AM196Q410502LK, CO5300 over QSPI (opencharm hardware/pinmap.md). No backlight pin: the AMOLED's
+// brightness is DCS 0x51; LCM_EN (GPIO38) powers the panel and stands in for LCD_PIN_BL. 410 columns start at
+// panel column 22 (set_gap). 16-bit panel RAM holds RGB565 high byte first, like the ST7789s.
+#define LCD_NAME         "OpenCharm CO5300"
+#define LCD_HOST         SPI2_HOST
+#define LCD_PIN_SCLK     9
+#define LCD_PIN_D0       10
+#define LCD_PIN_D1       11
+#define LCD_PIN_D2       12
+#define LCD_PIN_D3       13
+#define LCD_PIN_CS       14
+#define LCD_PIN_RST      15
+#define LCD_PIN_BL       38
+#define LCD_PCLK_HZ      (40 * 1000 * 1000)
+#define LCD_H_RES        410
+#define LCD_V_RES        502
+#define LCD_X_GAP        22
+#define LCD_BAR_ROWS     24
+#define LCD_ANIM_SCALE   7
+#define LCD_DOT_MARGIN   10
+#define LCD_BUF_CAPS     MALLOC_CAP_DMA
 #elif CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_C6_ST7789
 // Waveshare ESP32-C6-LCD-1.47: 172x320 ST7789 panel on SPI.
 #define LCD_NAME         "Waveshare ESP32-C6 ST7789"
@@ -404,7 +430,7 @@ static bool s_dot_drawn = false;
 static bool s_image_mode = false;
 static const uint8_t s_dot_rows[LCD_DOT_CELLS] = {0x6, 0xf, 0xf, 0x6};
 
-#if CONFIG_HOMEHUB_LED_BACKEND_IDEASPARK_ST7789 || CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_C6_ST7789
+#if CONFIG_HOMEHUB_LED_BACKEND_IDEASPARK_ST7789 || CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_C6_ST7789 || CONFIG_HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
 static SemaphoreHandle_t s_draw_done = NULL;
 
 static bool lcd_draw_done(esp_lcd_panel_io_handle_t io,
@@ -653,6 +679,76 @@ static esp_err_t lcd_panel_init(void) {
     if (err == ESP_OK) err = esp_lcd_panel_reset(s_panel);
     if (err == ESP_OK) err = esp_lcd_panel_init(s_panel);
     if (err == ESP_OK) err = esp_lcd_panel_invert_color(s_panel, true);
+    if (err == ESP_OK) err = esp_lcd_panel_set_gap(s_panel, LCD_X_GAP, 0);
+    return err;
+}
+
+static esp_err_t lcd_panel_on(void) {
+    return esp_lcd_panel_disp_on_off(s_panel, true);
+}
+#elif CONFIG_HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
+// Vendor init for the AM196Q410502LK (Osptek example co5300_init_cmds.h); esp_lcd_co5300 rewrites 0x2A/0x2B per
+// transfer. Brightness (0x51) starts at full: this backend has no fade.
+static const co5300_lcd_init_cmd_t s_co5300_init[] = {
+    {0xFE, (uint8_t[]){0x00}, 1, 0},
+    {0x11, (uint8_t[]){0x00}, 0, 120},
+    {0xFE, (uint8_t[]){0x00}, 1, 0},
+    {0xC4, (uint8_t[]){0x80}, 1, 0},
+    {0x3A, (uint8_t[]){0x55}, 1, 0},
+    {0x53, (uint8_t[]){0x20}, 1, 0},
+    {0x63, (uint8_t[]){0xFF}, 1, 0},
+    {0x2A, (uint8_t[]){0x00, 0x00, 0x01, 0xBF}, 4, 0},
+    {0x2B, (uint8_t[]){0x00, 0x00, 0x01, 0x6F}, 4, 0},
+    {0x29, (uint8_t[]){0x00}, 0, 60},
+    {0x51, (uint8_t[]){0xFF}, 1, 0},
+    {0x58, (uint8_t[]){0x07}, 1, 10},
+};
+
+static esp_err_t lcd_panel_init(void) {
+    s_draw_done = xSemaphoreCreateBinary();
+    if (!s_draw_done) return ESP_ERR_NO_MEM;
+    // LCM_EN first: the panel loses its registers without power.
+    gpio_config_t en_cfg = {.pin_bit_mask = 1ULL << LCD_PIN_BL, .mode = GPIO_MODE_OUTPUT};
+    gpio_config(&en_cfg);
+    gpio_set_level(LCD_PIN_BL, 1);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    spi_bus_config_t bus_cfg = {
+        .sclk_io_num = LCD_PIN_SCLK,
+        .data0_io_num = LCD_PIN_D0,
+        .data1_io_num = LCD_PIN_D1,
+        .data2_io_num = LCD_PIN_D2,
+        .data3_io_num = LCD_PIN_D3,
+        .max_transfer_sz = LCD_ANIM_BUF_PIXELS * sizeof(uint16_t),
+        .flags = SPICOMMON_BUSFLAG_QUAD,
+    };
+    esp_lcd_panel_io_spi_config_t io_cfg = {
+        .cs_gpio_num = LCD_PIN_CS,
+        .dc_gpio_num = -1,
+        .spi_mode = 0,
+        .pclk_hz = LCD_PCLK_HZ,
+        .trans_queue_depth = 4,
+        .on_color_trans_done = lcd_draw_done,
+        .lcd_cmd_bits = 32,
+        .lcd_param_bits = 8,
+        .flags.quad_mode = true,
+    };
+    const co5300_vendor_config_t vendor = {
+        .init_cmds = s_co5300_init,
+        .init_cmds_size = sizeof(s_co5300_init) / sizeof(s_co5300_init[0]),
+        .flags = {.use_qspi_interface = 1},
+    };
+    esp_lcd_panel_dev_config_t panel_cfg = {
+        .reset_gpio_num = LCD_PIN_RST,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
+        .bits_per_pixel = 16,
+        .vendor_config = (void *)&vendor,
+    };
+    esp_lcd_panel_io_handle_t io = NULL;
+    esp_err_t err = spi_bus_initialize(LCD_HOST, &bus_cfg, SPI_DMA_CH_AUTO);
+    if (err == ESP_OK) err = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)LCD_HOST, &io_cfg, &io);
+    if (err == ESP_OK) err = esp_lcd_new_panel_co5300(io, &panel_cfg, &s_panel);
+    if (err == ESP_OK) err = esp_lcd_panel_reset(s_panel);
+    if (err == ESP_OK) err = esp_lcd_panel_init(s_panel);
     if (err == ESP_OK) err = esp_lcd_panel_set_gap(s_panel, LCD_X_GAP, 0);
     return err;
 }
@@ -1216,7 +1312,7 @@ static bool lcd_draw_image_rect(int x, int y, int w, int h, const void *pixels) 
         s_image_mode = true;
         lcd_clear_rows(0, LCD_V_RES);
     }
-#if CONFIG_HOMEHUB_LED_BACKEND_IDEASPARK_ST7789 || CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_C6_ST7789
+#if CONFIG_HOMEHUB_LED_BACKEND_IDEASPARK_ST7789 || CONFIG_HOMEHUB_LED_BACKEND_WAVESHARE_C6_ST7789 || CONFIG_HOMEHUB_LED_BACKEND_OPENCHARM_CO5300
     // Already in the panel's format; copied only to reach DMA memory.
     memcpy(s_anim_buf, pixels, (size_t)w * h * sizeof(uint16_t));
 #else
